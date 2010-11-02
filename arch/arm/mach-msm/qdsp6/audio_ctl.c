@@ -21,6 +21,7 @@
 #include <linux/msm_audio.h>
 
 #include <mach/msm_qdsp6_audio.h>
+#include <mach/htc_acoustic_qsd.h>
 
 #define BUFSZ (0)
 
@@ -77,7 +78,7 @@ static int q6_voice_stop(void)
 	return 0;
 }
 
-int q6_fm_start(void)
+static int q6_fm_start(void)
 {
 	int rc = 0;
 
@@ -102,7 +103,7 @@ done:
 	return rc;
 }
 
-int q6_fm_stop(void)
+static int q6_fm_stop(void)
 {
 	mutex_lock(&fm_lock);
 	if (fm_started) {
@@ -186,6 +187,15 @@ static int q6_ioctl(struct inode *inode, struct file *file,
 		} else
 			rc = q6audio_reinit_acdb(filename);
 		break;
+	case AUDIO_ENABLE_AUXPGA_LOOPBACK: {
+		uint32_t enable;
+		if (copy_from_user(&enable, (void*) arg, sizeof(enable))) {
+			rc = -EFAULT;
+			break;
+		}
+		rc = enable_aux_loopback(enable);
+		break;
+	}
 	default:
 		pr_info("%s: unknown %d\n", __func__, cmd);
 		rc = -EINVAL;

@@ -321,75 +321,6 @@ struct i2c_client *get_microp_client(void)
 	return private_microp_client;
 }
 
-int microp_i2c_read(uint8_t addr, uint8_t *data, int length)
-{
-	struct i2c_client *client = private_microp_client;
-
-	if (!client)	{
-		printk(KERN_ERR "%s: dataset: client is empty\n", __func__);
-		return -EIO;
-	}
-
-	if (i2c_read_block(client, addr, data, length) < 0)	{
-		dev_err(&client->dev, "%s: write microp i2c fail\n", __func__);
-		return -EIO;
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(microp_i2c_read);
-
-int microp_i2c_write(uint8_t addr, uint8_t *data, int length)
-{
-	struct i2c_client *client = private_microp_client;
-
-	if (!client)	{
-		printk(KERN_ERR "%s: dataset: client is empty\n", __func__);
-		return -EIO;
-	}
-
-	if (i2c_write_block(client, addr, data, length) < 0)	{
-		dev_err(&client->dev, "%s: write microp i2c fail\n", __func__);
-		return -EIO;
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(microp_i2c_write);
-
-int microp_read_adc(uint8_t channel, uint16_t *value)
-{
-	struct i2c_client *client;
-	struct microp_i2c_client_data *cdata;
-	int ret;
-	uint8_t cmd[2], data[2];
-
-	client = private_microp_client;
-	cdata = i2c_get_clientdata(client);
-	cmd[0] = 0;
-	cmd[1] = channel;
-	mutex_lock(&cdata->microp_adc_mutex);
-	ret = i2c_write_block(client, MICROP_I2C_WCMD_READ_ADC_VALUE_REQ,
-			      cmd, 2);
-	if (ret < 0) {
-		dev_err(&client->dev, "%s: request adc fail\n", __func__);
-		mutex_unlock(&cdata->microp_adc_mutex);
-		return -EIO;
-	}
-
-	ret = i2c_read_block(client, MICROP_I2C_RCMD_ADC_VALUE, data, 2);
-	if (ret < 0) {
-		dev_err(&client->dev, "%s: read adc fail\n", __func__);
-		mutex_unlock(&cdata->microp_adc_mutex);
-		return -EIO;
-	}
-
-	*value = data[0] << 8 | data[1];
-	mutex_unlock(&cdata->microp_adc_mutex);
-	return 0;
-}
-EXPORT_SYMBOL(microp_read_adc);
-
 static int microp_read_gpi_status(struct i2c_client *client, uint16_t *status)
 {
 	uint8_t data[3];
@@ -435,23 +366,6 @@ static int microp_interrupt_disable(struct i2c_client *client,
 			__func__, interrupt_mask);
 	return ret;
 }
-
-int microp_write_interrupt(struct i2c_client *client,
-		uint16_t interrupt, uint8_t enable)
-{
-	int ret;
-
-	if (enable) {
-		ret = microp_interrupt_enable(client, interrupt);
-		printk("%s: microp_interrupt_enable called\n", __func__ );
-	} else {
-		ret = microp_interrupt_disable(client, interrupt);
-		printk("%s: microp_interrupt_disable called\n", __func__ );
-	}
-
-	return ret;
-}
-EXPORT_SYMBOL(microp_write_interrupt);
 
 /*
  * SD slot card-detect support
@@ -1012,60 +926,6 @@ static int microp_spi_enable(uint8_t on)
 	msleep(10);
 	return ret;
 }
-
-/* Lookup active SPI devices and only turn it off when no device
- * is using it
- * */
-int microp_spi_vote_enable(int spi_device, uint8_t enable) {
-	//XXX need to check that all that crap in the HTC kernel is needed
-	struct i2c_client *client = private_microp_client;
-	struct microp_i2c_client_data *cdata = i2c_get_clientdata(client);
-	uint8_t data[2] = {0, 0};
-	int ret = 0;
-
-	if (!client) {
-		printk(KERN_ERR "%s: dataset: client is empty\n", __func__);
-		return -EIO;
-	}
-
-	if (spi_device == SPI_OJ) {
-		microp_oj_interrupt_mode(client, enable);
-		printk(KERN_ERR "%s: Changing OJ interrupt mode [%d]\n", __func__, enable);
-	}
-	
-	mutex_lock(&cdata->microp_adc_mutex);
-	/* Add/remove it from the poll */
-	if (enable)
-		cdata->spi_devices_vote |= spi_device;
-	else
-		cdata->spi_devices_vote &= ~spi_device;
-
-	ret = i2c_read_block(client, MICROP_I2C_RCMD_SPI_BL_STATUS, data, 2);
-	if (ret != 0) {
-		printk(KERN_ERR "%s: read SPI/BL status fail\n", __func__);
-		mutex_unlock(&cdata->microp_adc_mutex);
-		return ret;
-	}
-
-	if ((data[1] & 0x01) ==
-		((cdata->spi_devices & cdata->spi_devices_vote) ? 1 : 0)) {
-			printk(KERN_ERR "%s: already in voted state, [spi_device %d,enable %d], [spi_status %d, spi_devices_vote %d]\n", __func__, spi_device, enable, data[1]&0x01, cdata->spi_devices_vote);
-			mutex_unlock(&cdata->microp_adc_mutex);
-			return ret;
-	}
-
-	if (cdata->spi_devices & cdata->spi_devices_vote)
-		enable = 1;
-	else
-		enable = 0;
-
-	printk(KERN_ERR "%s: Changing SPI [%d]\n", __func__, enable);
-
-	mutex_unlock(&cdata->microp_adc_mutex);
-	ret = microp_spi_enable(enable);
-	return ret;
-}
-EXPORT_SYMBOL(microp_spi_vote_enable);
 
 /*
  * G-sensor

@@ -7,3 +7,5 @@ obj-y += audio_ctl.o
 obj-y += msm_q6vdec.o
 obj-y += msm_q6venc.o
 obj-y += dsp_debug.o
+#obj-y += aac_in.o
+#obj-y += qcelp_in.o
